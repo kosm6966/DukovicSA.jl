@@ -9,7 +9,7 @@
 # SpecialFunctions.erf
 
 
-function runwalkersRC(sys) #Returns the hitting times for nwalkers.
+function runwalkers(sys::KMC_RC) #Returns the hitting times for nwalkers.
     #Pre-allocate arrays
     rng = Random.MersenneTwister() #Initalize seed
     tt = zeros(Float64,sys.nwalkers) #Store waiting times

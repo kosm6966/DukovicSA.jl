@@ -1,4 +1,4 @@
-function runwalkersHT(sys) #Returns the hitting times for nwalkers.
+function runwalkers(sys::KMC_HT) #Returns the hitting times for nwalkers.
     rng = Random.MersenneTwister() #Initalize seed
 
     #Pre-allocate arrays

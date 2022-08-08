@@ -14,109 +14,96 @@ RUNTIME: Int64. Terminate run after RUNTIME seconds.
 VERB: Int64. If 0 - don't print to screen. If 3 - print everything to screen.
 Z0: Int64. Either static z0 or z0max for uniform distribution
 
+z0 = FitZ0()
 """
-function run_optim(P0,LB,UB,Z0,NT,NS,RT,RUNTIME,VERB)
-#Uncomment if fitting KMC to data
-#Data is stored in folder ~/.julia/dev/DukovicSA/
-	lengthrod=100
-	numwalkers=50000
-	# xdata,ydata = load_ordered(joinpath(@__DIR__, "../211001_CdSODPA_PTZ_h.csv"))
-	xdata,ydata = DukovicSA.load_ordered(joinpath(@__DIR__, "../CdSODPA_Bulb.csv"))
+function run_optim(optimsystem::LineType,testsystem::LineType,P0,LB,UB;RUNTIME=86400,VERB=3,NT=50,NS=20,RT=0.85)
 
-#Uncomment if fitting KMC_RC to S(t)
-	# lengthrod=100
-	# numwalkers=50000
-	# tau = 55.
-	# S = (t) -> (sqrt.(t/(pi*tau)).*(exp.(-tau ./t) .- 1).+erf.(sqrt.(tau ./t)))
+	xtest,ytest = DukovicSA.initializetest(testsystem)
 
-#Uncomment if fitting S(t) to data
-#Data is stored in folder ~/.julia/dev/DukovicSA/
-	# S = (tau,t) -> (sqrt.(t/(pi*tau)).*(exp.(-tau ./t) .- 1).+erf.(sqrt.(tau ./t)))
-	# xdata,ydata = DukovicSA.load_ordered(joinpath(@__DIR__, "../CdSODPA_Bulb.csv"))
+	println(string("\n optimsystem: \n",optimsystem))
+	println(string("\n testsystem: \n",testsystem))
+	
+	# Call optimize function from Optim package
+	objective_function(P) = fit(P,optimsystem::LineType,ytest,xtest)
+	calloptim(objective_function,LB,UB,P0,VERB,RUNTIME,NT,NS,RT)
+	println("\n run complete \n")
 
-#Uncomment this section if fitting S(t) to KMC_RC with static z0.
-	# lengthrod=100
-	# numwalkers=50000
-	# kHOP=0.4
-	# S = (tau,t) -> (sqrt.(t/(pi*tau)).*(exp.(-tau ./t) .- 1).+erf.(sqrt.(tau ./t)))
-	# sysRC = DukovicSA.SystemParameters(L=lengthrod,z0=Z0,nwalkers=numwalkers,khop=kHOP) #Store parameters in structure
-	# tacceptor = DukovicSA.runwalkersRC(sysRC) #For static z0
-	# yacceptor = DukovicSA.makehist(tacceptor) #Make histogram of 1/t
-	# reverse!(yacceptor) #Reverse for RC data
+	return nothing
+end
 
-#Uncomment this section if fitting S(t) to KMC_RC with uniform z0.
-	# lengthrod=100
-	# numwalkers=50000
-	# kHOP=0.4
-	# S = (tau,t) -> (sqrt.(t/(pi*tau)).*(exp.(-tau ./t) .- 1).+erf.(sqrt.(tau ./t)))
-	# sysRC = DukovicSA.SystemParameters(L=lengthrod,z0=Z0,nwalkers=numwalkers,khop=kHOP) #Store parameters in structure
-	# tacceptor = DukovicSA.runwalkersRC_uniform(sysRC) #For uniform z0
-	# yacceptor = DukovicSA.makehist(tacceptor) #Make histogram of 1/t
-	# reverse!(yacceptor) #Reverse for RC data
+function fit(P0,optimsystem::KMC,ytest,xtest)
+	optimsystem = optimsysinit(P0,optimsystem)
+	intacceptor, yint, _ = fitKMC(optimsystem,xtest,ytest)
+	res = residual_function(P0[1],intacceptor,yint)
+	return res
+end
 
-	function objective_function(P0)
-	#Uncomment if fitting KMC_RC to data with static z0. P0 = [khop,A].
-		#sysRC = DukovicSA.SystemParameters(L=lengthrod,z0=Z0,nwalkers=numwalkers,khop=P0[1]) #Store inputs in structure
-		#tacceptor = DukovicSA.runwalkersRC(sysRC)
-		#yacceptor = DukovicSA.makehist(tacceptor)
-		#reverse!(yacceptor)
-		#intacceptor = DukovicSA.int_data(tacceptor,yacceptor,xdata)
-		#yint = copy(ydata)
-		#cutxy!(intacceptor,yint)
-		#residual =  sum((P0[2]*intacceptor .- yint).^2)/length(yint)
+function fit(P0,optimsystem::StFunction,ytest,xtest)
+	optimsystem = StFunction(optimsystem,τ=P0[2]) #Store inputs in structure
+	STvec = optimsystem.S(xtest)
+	res = residual_function(P0[1],ytest,STvec)
+	return res
+end
 
-	#Uncomment if fitting KMC_RC to data with uniform z0. P0 = [khop,A].
-		sysRC = DukovicSA.SystemParameters(L=lengthrod,z0=Int64(round(P0[3])),nwalkers=numwalkers,khop=P0[1]) #Store inputs in structure
-		tacceptor = DukovicSA.runwalkersRCv_uniform(sysRC)
+function optimsysinit(P0,sys::KMC_HT)
+	sys = KMC_HT(sys,khop=P0[2],p=P0[3],kHT=P0[4]) #Store inputs in structure
+	if length(P0) > 4 sys = KMC_HT(sys,z0=P0[5]) end#Store inputs in structure
+	return sys
+end
+
+function optimsysinit(P0,sys::KMC_RC)
+	sys = KMC_RC(sys,khop=P0[2]) #Store inputs in structure
+	if length(P0) > 2 sys = KMC_HT(sys,z0=P0[3]) end#Store inputs in structure
+	return sys
+end
+
+function residual_function(A,ytest,yfit)
+	yfit .*= A
+	yfit .-= ytest
+	yfit .= yfit.^2
+	return sum(yfit)/length(yfit)
+end
+
+function fitKMC(sys::KMC,xdata,ydata)
+		tacceptor = DukovicSA.runwalkers(sys)
 		yacceptor = DukovicSA.makehist(tacceptor)
-		reverse!(yacceptor)
-		intacceptor = DukovicSA.int_data(tacceptor,yacceptor,xdata)
-		yint = copy(ydata)
-		cutxy!(intacceptor,yint)
-		residual =  sum((P0[2]*intacceptor .- yint).^2)/length(yint)
+		reversebulbonly(sys,yacceptor)
+		ydatacopy = copy(ydata)
+		xdatacopy = copy(xdata)
+		DukovicSA.cutoutofbounds!(xdatacopy,ydatacopy,tacceptor)
+		intacceptor = DukovicSA.int_data(tacceptor,yacceptor,xdatacopy)
+		return intacceptor, ydatacopy, xdatacopy
+end
 
-	#Uncomment if fitting KMC_RC to S(t) with static z0. P0 = [khop,A].
-		#sysRC = DukovicSA.SystemParameters(L=lengthrod,z0=Z0,nwalkers=numwalkers,khop=P0[1]) #Store inputs in structure
-		#tacceptor = DukovicSA.runwalkersRC(sysRC)
-		#yacceptor = DukovicSA.makehist(tacceptor)
-		#reverse!(yacceptor)
-		#residual =  sum((S(tacceptor) .- P0[2]*yacceptor).^2)/length(yacceptor)
+function reversebulbonly(sys::KMC_RC,yvec)
+	reverse!(yvec)
 
-	#Uncomment if fitting KMC_RC to S(t) with uniform z0. P0 = [khop,A].
-		#sysRC = DukovicSA.SystemParameters(L=lengthrod,z0=Z0,nwalkers=numwalkers,khop=P0[1]) #Store inputs in structure
-		#tacceptor = DukovicSA.runwalkersRC_uniform(sysRC)
-		#yacceptor = DukovicSA.makehist(tacceptor)
-		#reverse!(yacceptor)
-		#residual =  sum((S(55.,tacceptor) .- P0[2]*yacceptor).^2)/length(yacceptor)
+	return nothing
+end
 
-	#Uncomment if fitting S(t) to KMC_RC. P0 = [tau,A].
-		#residual =  sum((P0[2]*S(P0[1],tacceptor) .- yacceptor).^2)/length(yacceptor)
+function reversebulbonly(sys::KMC_HT,yvec)
 
-	#Uncomment if fitting S(t) to data. P0 = [tau,A].
-		#residual =  sum((P0[2]*S(P0[1],tacceptor) .- ydata).^2)/length(ydata)
+	return nothing
+end
 
-	#Uncomment if fitting KMC_HT to data with static z0. P0 = [p,khop,kHT,A].
-		#sysHT = SystemParameters(L=lengthrod,z0=Z0,nwalkers=numwalkers,p=P0[1],khop=P0[2],kHT=P0[3]) #Store inputs in structure
-		#tacceptor = DukovicSA.runwalkersHT(sysHT)
-		#yacceptor = DukovicSA.makehist(tacceptor)
-		#intacceptor = DukovicSA.int_data(tacceptor,yacceptor,xdata)
-		#yint = copy(ydata)
-		#cutxy!(intacceptor,yint)
-		#residual =  sum((P0[4]*intacceptor .- yint).^2)/length(yint)
+function initializetest(sys::KMC)
+	tacceptor = runwalkersRC(sys)
+	yacceptor = makehist(tacceptor)
+	reversebulbonly(sys,yacceptor)
 
-	#Uncomment if fitting KMC_HT to data with uniform z0. P0 = [p,khop,kHT,A].
-		#sysHT = SystemParameters(L=lengthrod,z0=Z0,nwalkers=numwalkers,p=P0[1],khop=P0[2],kHT=P0[3]) #Store inputs in structure
-		#tacceptor = DukovicSA.runwalkersHT_uniform(sysHT)
-		#yacceptor = DukovicSA.makehist(tacceptor)
-		#intacceptor = DukovicSA.int_data(tacceptor,yacceptor,xdata)
-		#yint = copy(ydata)
-		#cutxy!(intacceptor,yint)
-		#residual =  sum((P0[4]*intacceptor .- yint).^2)/length(yint)
+	return taccepter, yacceptor
+end
 
-        return residual
-	end
-# Call optimize function from Optim package
-	res = optimize(objective_function, LB, UB, P0,
+function initializetest(sys::StFunction)
+	return sys.t, sys.S(sys.t)
+end
+
+function initializetest(sys::Data)
+	return copy(sys.xdata), copy(sys.ydata)
+end
+
+function calloptim(objective_function,LB,UB,P0,VERB,RUNTIME,NT,NS,RT)
+	optimize(objective_function, LB, UB, P0,
 		SAMIN(;
 			nt = NT,     # 10; reduce temperature every NT*NS*dim(P0) evaluations
 			ns = NS,     # 20; adjust bounds every NS*dim(P0) evaluations
@@ -132,8 +119,4 @@ function run_optim(P0,LB,UB,Z0,NT,NS,RT,RUNTIME,VERB)
 			show_trace = true,
 			store_trace = false,
 			extended_trace = true))
-
-	println("\n run complete \n")
-
-	return nothing
 end

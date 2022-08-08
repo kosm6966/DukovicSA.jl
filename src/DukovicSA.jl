@@ -12,11 +12,20 @@ using Parameters
 using StaticArrays
 using SpecialFunctions
 
+include("parameters.jl")
 include("data_functions.jl")
 include("load_save.jl")
 include("optimize_function.jl")
 include("rfKMC_HT.jl")
 include("rfKMC_RC.jl")
 include("rfKMC_INIT.jl")
+
+export StFunction
+export Data
+export KMC_HT
+export KMC_RC
+export run_optim
+export saveascsv
+export makerandp0file
 
 end
