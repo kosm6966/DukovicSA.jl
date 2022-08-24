@@ -3,6 +3,7 @@ function runwalkers(sys::KMC_HT) #Returns the hitting times for nwalkers.
 
     #Pre-allocate arrays
     rod = rand(rng,Float64,sys.L,sys.nwalkers) #Random numbers 'look up table' for placing acceptors
+    d = initializeholes(rng,sys)
     idx = zeros(Int64,sys.L+2) #Used to store indices of acceptors
     isacceptor =  Vector{Bool}(undef,sys.L) #Stores 1 (true) if acceptors at position
 
@@ -12,31 +13,7 @@ function runwalkers(sys::KMC_HT) #Returns the hitting times for nwalkers.
     #Walk
     for n in 1:sys.nwalkers
         acceptors = init_acceptors!(idx,isacceptor,rod,sys,n) #Initialize acceptor positions
-        t,whahahappened = walkHT(acceptors,sys,rng,sys.z0) #Do one walk
-        tt[n] = t #Store waiting time of walk 'n'
-        event[n] = whahahappened #If 1, HT; if 0 RC (recombine with e at bulb)
-    end
-
-    #Only take HT events and sort
-    return sort!(tt[event])
-end
-
-function runwalkersHT_uniform(sys) #Returns the hitting times for nwalkers.
-    rng = Random.MersenneTwister() #Initalize seed
-
-    #Pre-allocate arrays
-    rod = rand(rng,Float64,sys.L,sys.nwalkers) #Random numbers 'look up table' for placing acceptors
-    uniformz0 = rand(rng,1:sys.z0,sys.nwalkers) #'Look up table' for initial positions
-    idx = zeros(Int64,sys.L+2) #Used to store indices of acceptors
-    isacceptor =  Vector{Bool}(undef,sys.L) #Stores 1 (true) if acceptors at position
-
-    tt = zeros(Float64,sys.nwalkers) #Stores waiting times
-    event = Vector{Bool}(undef,sys.nwalkers) #Stores type of event
-
-    #Walk
-    for n in 1:sys.nwalkers
-        acceptors = init_acceptors!(idx,isacceptor,rod,sys,n) #Initialize acceptor positions
-        t,whahahappened = walkHT(acceptors,sys,rng,uniformz0[n]) #Do one walk
+        t,whahahappened = walkHT(acceptors,sys,rng,d[n]) #Do one walk
         tt[n] = t #Store waiting time of walk 'n'
         event[n] = whahahappened #If 1, HT; if 0 RC (recombine with e at bulb)
     end
@@ -60,9 +37,9 @@ function init_acceptors!(A,isacceptor,rod,sys,iter)
     return view(A,1:n) #Return view (pointer) to pre-allocated array on each iteration.
 end
 
-function walkHT(acceptors,sys,rng,z0)
+function walkHT(acceptors,sys,rng,l)
     t = 0. #Initialize walk time
-    z = z0 #Initialize position
+    z = l #Initialize position
     HT = true #Initialize hole transfer flag; Run until false
     RC = true #Initialize electron-hole recombination flag; Run until false
     go = event -> event==1 ? -1 : +1 #Go left(-) if event==1; if event==2 or event==3 move right(+) (event==3 kills loop anyhow)
@@ -90,7 +67,7 @@ function walkHT(acceptors,sys,rng,z0)
             bin = bin .+ go(choose) #Update bin; only consider moving to adjacent bins
         end
         if length(bin)!=0
-            bin = searchsorted(acceptors,z) #Finding new bin in above if statement is faster (I think) but doesn't work if z0 is on an acceptor site
+            bin = searchsorted(acceptors,z) #Finding new bin in above if statement is faster (I think) but doesn't work if l is on an acceptor site
         end
     end
     return t, !HT

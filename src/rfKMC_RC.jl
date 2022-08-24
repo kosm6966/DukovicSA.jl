@@ -7,16 +7,15 @@
 #       Weighted by fraction with bulb: .32*22 + .59*37 + .65*68 /3 = 24
 #       Non-weighted 22 + 37 + 68 /3 = 42
 # SpecialFunctions.erf
-
-
 function runwalkers(sys::KMC_RC) #Returns the hitting times for nwalkers.
     #Pre-allocate arrays
     rng = Random.MersenneTwister() #Initalize seed
     tt = zeros(Float64,sys.nwalkers) #Store waiting times
+    d = initializeholes(rng,sys)
 
     #Take n walks
     for n in 1:sys.nwalkers
-        t = walkRC(sys,rng,sys.z0) #Static z0
+        t = walkRC(sys,rng,d[n])
         tt[n] = t
     end
 
@@ -24,25 +23,9 @@ function runwalkers(sys::KMC_RC) #Returns the hitting times for nwalkers.
     return sort!(tt)
 end
 
-function runwalkersRC_uniform(sys) #Returns the hitting times for nwalkers.
-    #Pre-allocate arrays
-    rng = Random.MersenneTwister() #Initalize seed
-    tt = zeros(Float64,sys.nwalkers) #Store waiting times
-    uniformz0 = rand(rng,1:sys.z0,sys.nwalkers) #'Look up table' for initial positions
-
-    #Take n walks
-    for n in 1:sys.nwalkers
-        t = walkRC(sys,rng,uniformz0[n]) #Uniform z0
-        tt[n] = t
-    end
-
-    #Return n waiting times
-    return sort!(tt)
-end
-
-function walkRC(sys,rng,z0)
+function walkRC(sys,rng,l)
     t = 0. #Initialize walk time
-    z = z0 #Initialize position
+    z = l #Initialize position
     RC = true #Initialize electron-hole recombination flag; Run til false
     go = event -> event==1 ? -1 : +1 #Go left(-) if event==1; if event==2
     bc = x -> x==(sys.L+1) ? (sys.L-1) : x #If event takes z from L to L+1 go to L-1

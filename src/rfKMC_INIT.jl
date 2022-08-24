@@ -1,3 +1,13 @@
+function initializeholes(rng,sys)
+    dist = sys.distribution(sys.params...)
+    d = rand(rng,dist,sys.nwalkers)
+    d ./= maximum(d)*1/sys.L
+    if minimum(d) < 0.5
+        d .+= 0.5 - minimum(d)
+    end
+    return Int64.(ceil.(d))
+end
+
 function makehist(eventtimes)
     if length(eventtimes)!=0
         #Histogram is 1:(# of events); normalized by # of events

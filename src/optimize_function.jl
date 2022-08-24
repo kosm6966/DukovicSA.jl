@@ -1,6 +1,6 @@
 """
 
-`run_optim(P0,LB,UB,Z0,NT,NS,RT,RUNTIME,VERB)` runs the Simulated Annealing
+`run_optim(P0,LB,UB,l,NT,NS,RT,RUNTIME,VERB)` runs the Simulated Annealing
 program to optimize the parameters given in P0 by recursively minimizing χ².
 All inputs are required. Results are printed to screen.
 
@@ -12,50 +12,63 @@ NS: Int64. Adjust bounds every NS*dim(P0) evaluations.
 RT: Float64. Cooling Rate. When temp changes, new temp is T_new = RT * T_old
 RUNTIME: Int64. Terminate run after RUNTIME seconds.
 VERB: Int64. If 0 - don't print to screen. If 3 - print everything to screen.
-Z0: Int64. Either static z0 or z0max for uniform distribution
+l: Int64. Either static l or lmax for uniform distribution
 
-z0 = FitZ0()
+l = Fitl()
 """
 function run_optim(optimsystem::LineType,testsystem::LineType,P0,LB,UB;RUNTIME=86400,VERB=3,NT=50,NS=20,RT=0.85)
 
 	xtest,ytest = DukovicSA.initializetest(testsystem)
+	idx = Array{Bool}(undef,size(ytest))
+	yopt = similar(ytest)
 
 	println(string("\n optimsystem: \n",optimsystem))
 	println(string("\n testsystem: \n",testsystem))
 	
 	# Call optimize function from Optim package
-	objective_function(P) = fit(P,optimsystem::LineType,ytest,xtest)
+	objective_function(P) = fit(P,optimsystem::LineType,ytest,xtest,idx,yopt)
 	calloptim(objective_function,LB,UB,P0,VERB,RUNTIME,NT,NS,RT)
 	println("\n run complete \n")
 
 	return nothing
 end
 
-function fit(P0,optimsystem::KMC,ytest,xtest)
+function fit(P0,optimsystem::KMC,ytest,xtest,idx,yfit)
 	optimsystem = optimsysinit(P0,optimsystem)
-	intacceptor, yint, _ = fitKMC(optimsystem,xtest,ytest)
-	res = residual_function(P0[1],intacceptor,yint)
-	return res
+	yfit .= fitKMC(optimsystem,xtest)
+	return residual_function(P0[1],idx,yfit,ytest)
 end
 
-function fit(P0,optimsystem::StFunction,ytest,xtest)
+function fit(P0,optimsystem::StFunction,ytest,xtest,idx,yfit)
 	optimsystem = StFunction(optimsystem,τ=P0[2]) #Store inputs in structure
 	STvec = optimsystem.S(xtest)
-	res = residual_function(P0[1],ytest,STvec)
-	return res
+	return residual_function(P0[1],ytest,STvec)
 end
 
 function optimsysinit(P0,sys::KMC_HT)
 	sys = KMC_HT(sys,khop=P0[2],p=P0[3],kHT=P0[4]) #Store inputs in structure
-	if length(P0) > 4 sys = KMC_HT(sys,z0=P0[5]) end#Store inputs in structure
+	if sys.params == :first
+		sys = KMC_HT(sys,params=(P0[5],sys.params[2]))
+	elseif sys.params == :second
+		sys = KMC_HT(sys,params=(sys.params[1],P0[5]))
+	elseif sys.params == :both
+		sys = KMC_HT(sys,params=(P0[5],P0[6]))
+	end
 	return sys
 end
 
 function optimsysinit(P0,sys::KMC_RC)
 	sys = KMC_RC(sys,khop=P0[2]) #Store inputs in structure
-	if length(P0) > 2 sys = KMC_HT(sys,z0=P0[3]) end#Store inputs in structure
+	if sys.params == :first
+		sys = KMC_RC(sys,params=(P0[3],sys.params[2]))
+	elseif sys.params == :second
+		sys = KMC_RC(sys,params=(sys.params[1],P0[3]))
+	elseif sys.params == :both
+		sys = KMC_RC(sys,params=(P0[3],P0[4]))
+	end
 	return sys
 end
+
 
 function residual_function(A,ytest,yfit)
 	yfit .*= A
@@ -64,15 +77,37 @@ function residual_function(A,ytest,yfit)
 	return sum(yfit)/length(yfit)
 end
 
-function fitKMC(sys::KMC,xdata,ydata)
-		tacceptor = DukovicSA.runwalkers(sys)
-		yacceptor = DukovicSA.makehist(tacceptor)
+function residual_function(A,idx,yfit,ytest)
+    r = 0
+    idx .= isnan.(yfit)
+    idx .= .!(idx)
+	yfit .* A
+    for i in eachindex(idx)
+        if idx[i]
+            r += (ytest[i] - yfit[i])^2 
+        end
+    end
+    return r/sum(idx)
+end
+
+function fitKMC(sys::KMC,xdata)
+		tacceptor = runwalkers(sys)
+		yacceptor = makehist(tacceptor)
 		reversebulbonly(sys,yacceptor)
-		ydatacopy = copy(ydata)
-		xdatacopy = copy(xdata)
-		DukovicSA.cutoutofbounds!(xdatacopy,ydatacopy,tacceptor)
-		intacceptor = DukovicSA.int_data(tacceptor,yacceptor,xdatacopy)
-		return intacceptor, ydatacopy, xdatacopy
+		intacceptor = int_data(tacceptor,yacceptor,xdata)
+		return intacceptor
+end
+
+function fitKMC(sys::KMC,xdata,ydata,A;label1="data",label2="KMC",xlabel="ns",ylabel="arb. units")
+	tacceptor = runwalkers(sys)
+	yacceptor = makehist(tacceptor)
+	reversebulbonly(sys,yacceptor)
+	yfit = int_data(tacceptor,yacceptor,xdata)
+	xfit = copy(xdata)
+	cutxy!(yfit,xfit)
+	plt = plot(xdata,ydata,l=2,xaxis=:log,label=label1,legend=:topright,xlabel=xlabel,ylabel=ylabel);
+	plt = plot!(xfit,yfit*A,l=2,label=label2);
+	return plt, yfit, xfit
 end
 
 function reversebulbonly(sys::KMC_RC,yvec)

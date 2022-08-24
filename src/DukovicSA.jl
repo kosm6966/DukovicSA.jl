@@ -11,14 +11,15 @@ using Random
 using Parameters
 using StaticArrays
 using SpecialFunctions
+using StatsPlots
+using Plots
 
 include("parameters.jl")
 include("data_functions.jl")
-include("load_save.jl")
-include("optimize_function.jl")
 include("rfKMC_HT.jl")
 include("rfKMC_RC.jl")
 include("rfKMC_INIT.jl")
+include("optimize_function.jl")
 
 export StFunction
 export Data
@@ -27,5 +28,8 @@ export KMC_RC
 export run_optim
 export saveascsv
 export makerandp0file
+export fitKMC
+export StFunction
+export randomdistribution
 
 end
