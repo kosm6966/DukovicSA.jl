@@ -7,20 +7,18 @@
 #       Weighted by fraction with bulb: .32*22 + .59*37 + .65*68 /3 = 24
 #       Non-weighted 22 + 37 + 68 /3 = 42
 # SpecialFunctions.erf
-function runwalkers(sys::KMC_RC) #Returns the hitting times for nwalkers.
+function runwalkers!(sys::KMC_RC,tt) #Returns the hitting times for nwalkers.
     #Pre-allocate arrays
     rng = Random.MersenneTwister() #Initalize seed
-    tt = zeros(Float64,sys.nwalkers) #Store waiting times
-    d = initializeholes(rng,sys)
-
+    d = rand(rng,initializeholes(sys),sys.nwalkers)
     #Take n walks
     for n in 1:sys.nwalkers
         t = walkRC(sys,rng,d[n])
         tt[n] = t
     end
-
     #Return n waiting times
-    return sort!(tt)
+    sort!(tt)
+    return nothing
 end
 
 function walkRC(sys,rng,l)
@@ -39,3 +37,20 @@ function walkRC(sys,rng,l)
     end
     return t
 end
+
+
+# function walkRC(sys,rng,z)
+#     t = 0. #Initialize walk time
+#     # RC = true #Initialize electron-hole recombination flag; Run til false
+#     # go = event -> event==1 ? -1 : +1 #Go left(-) if event==1; if event==2
+#     a = (-1,1)
+#     go() = rand(rng,a)
+#     # bc = x -> x==(sys.L+1) ? (sys.L-1) : x #If event takes z from L to L+1 go to L-1
+
+#     while z!=0
+#         z += go() #Move walker. Γ1<uΓ<Γ2
+#         z -= 2*(z==(sys.L+1)) #Impose boundary condition
+#         t += -log(rand(rng,Float64))*sys.Qkinv #Wait time
+#     end
+#     return t
+# end

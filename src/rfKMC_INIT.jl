@@ -1,21 +1,17 @@
-function initializeholes(rng,sys)
-    dist = sys.distribution(sys.params...)
-    d = rand(rng,dist,sys.nwalkers)
-    d ./= maximum(d)*1/sys.L
-    if minimum(d) < 0.5
-        d .+= 0.5 - minimum(d)
-    end
-    return Int64.(ceil.(d))
+function initializeholes(sys)
+    a = round(Int,sys.holedist[1] - 1.7320508075688772*sys.holedist[2])
+    b = round(Int,sys.holedist[1] + 1.7320508075688772*sys.holedist[2])
+    return a:b
 end
 
-function makehist(eventtimes)
+function makehist!(eventtimes,yplot_PTZ)
     if length(eventtimes)!=0
         #Histogram is 1:(# of events); normalized by # of events
-        yplot_PTZ = collect(1.0/length(eventtimes):1.0/length(eventtimes):1.0) #Create normalized # of transferred holes to PTZ
+        yplot_PTZ .= [1.0/length(eventtimes):1.0/length(eventtimes):1.0;] #Create normalized # of transferred holes to PTZ
     else
-        yplot_PTZ = copy(eventtimes)
+        yplot_PTZ .= copy(eventtimes)
     end
-    return yplot_PTZ
+    return nothing
 end
 
 function gammawhat2(Γ1,uQ)

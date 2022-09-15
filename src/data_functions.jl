@@ -11,7 +11,7 @@ NoInterp() ?
 See: http://juliamath.github.io/Interpolations.jl/latest/control/
 
 """
-function int_data(xmc,ymc,xdata)
+function int_data!(xmc,ymc,xdata,yfit)
         # for i in eachindex(x)
         #         if x[i] < newx[1] || x[i] > newx[end]
         #                 x[i] = NaN
@@ -23,13 +23,15 @@ function int_data(xmc,ymc,xdata)
         # etp = interpolate((x,) , y, Gridded(Linear()))
         # yint = etp.(newx)
         etp = extrapolate(interpolate((xmc,) , ymc, Gridded(Linear())), NaN)
-        return vec(etp(xdata))
+        yfit .= vec(etp(xdata))
+        return nothing
 end
 
 function cutxy!(y1,y2)
         a = findall(isnan,y1)
         deleteat!(y1,a)
         deleteat!(y2,a)
+        return nothing
 end
 
 function cutoutofbounds!(xdata,ydata,xfit)
@@ -43,13 +45,29 @@ function cutoutofbounds!(xdata,ydata,xfit)
                 idx[i] = (xdata[i] > xfit[end])
         end
         if idx[end]; deleteat!(xdata,idx); deleteat!(ydata,idx) end
+        return nothing
+end
+
+function cutoutofbounds!(xdata,ydata,tstart,tend)
+        idx = falses(length(xdata))
+        for i in eachindex(xdata)
+                idx[i] = (xdata[i] < tstart)
+        end
+        if idx[1]; deleteat!(xdata,idx); deleteat!(ydata,idx) end
+        idx = falses(length(xdata))
+        for i in eachindex(xdata)
+                idx[i] = (xdata[i] > tend)
+        end
+        if idx[end]; deleteat!(xdata,idx); deleteat!(ydata,idx) end
+        return nothing
 end
 
 function saveascsv(A,filename)
-	datapath = joinpath(@__DIR__, filename)
-    open(datapath,"w") do f
-        writedlm(f,A,",")
+        datapath = joinpath(@__DIR__, filename)
+        open(datapath,"w") do f
+                writedlm(f,A,",")
 	end
+        return nothing
 end
 
 function makerandp0file(LB,UB,n)
@@ -59,30 +77,7 @@ function makerandp0file(LB,UB,n)
 	end
         out .= round.(out,digits=2)
         saveascsv(out,"../p0rand.txt")
-end
-
-function randomdistribution(sys;xlabel="z",ylabel="P(z)")
-        d = Distributions.rand(sys.distribution(),sys.nwalkers)
-        if minimum(d) < 0.5
-            d .+= 0.5 - minimum(d)
-        end
-        plt = density(d,label="pdf",l=2)
-        plt[1][1][:y] ./= maximum(plt[1][1][:y])
-
-        d = Int64.(ceil.(d))
-        plt = histogram!(d,normalize=:probability,label="binned",xlabel=xlabel,ylabel=ylabel,axticks = 0:1:(maximum(d)+(d[2]-d[1])))
-        a = plt[1][2][:y]
-        b = maximum(filter(!isnan,a))
-        # plt[1][2][:y] ./= b
-        plt[1][1][:y] .*= b
-
-        yaxis!([0,b + 0.1])
-
-        a = length(string(eltype(sys.distribution)))
-        b = string(sys.distribution)[1:a]
-        title!(string(b," ",string(sys.distribution)[(length(b)+a+3):end]))
-        display(plt)
-        return plt, d
+        return nothing
 end
 
 # """
@@ -107,10 +102,15 @@ function load_ordered(filename)
         return vec(A[:,1]), vec(A[:,2])
 end
 
+function csv2array(filename,dlm)
+        return Matrix(DataFrames.DataFrame(CSV.File(joinpath(@__DIR__, string("../",filename)); header=false,delim=dlm, ignorerepeated=true, types=Float64)))
+end
+        
+
 # """
-#
+
 # `savecsv(x,y,filename)` saves the csv file at "filename" which contains columns of data, labeled x, y.
-#
+
 # """
 # function saveascsv(x,y,filename)
 # datapath = joinpath(@__DIR__, filename)

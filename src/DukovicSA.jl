@@ -5,14 +5,10 @@ import CSV
 using Optim
 using DelimitedFiles
 using Interpolations
-using Distributions
-using StatsBase
 using Random
 using Parameters
-using StaticArrays
 using SpecialFunctions
-using StatsPlots
-using Plots
+using StaticArrays
 
 include("parameters.jl")
 include("data_functions.jl")
@@ -20,6 +16,15 @@ include("rfKMC_HT.jl")
 include("rfKMC_RC.jl")
 include("rfKMC_INIT.jl")
 include("optimize_function.jl")
+# include("optim/api.jl")
+# include("optim/interface.jl")
+# include("optim/assess_convergence.jl")
+# include("optim/types.jl")
+# include("optim/samin.jl")
+# include("optim/update.jl")
+# include("optim/maximize.jl")
+# include("optim/generic.jl")
+
 
 export StFunction
 export Data
@@ -29,7 +34,5 @@ export run_optim
 export saveascsv
 export makerandp0file
 export fitKMC
-export StFunction
-export randomdistribution
 
 end

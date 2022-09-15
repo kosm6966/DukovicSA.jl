@@ -16,26 +16,32 @@ l: Int64. Either static l or lmax for uniform distribution
 
 l = Fitl()
 """
-function run_optim(optimsystem::LineType,testsystem::LineType,P0,LB,UB;RUNTIME=86400,VERB=3,NT=50,NS=20,RT=0.85)
+function run_optim(optimsystem::LineType,testsystem::LineType,P0,LB,UB;RUNTIME=518400,VERB=3,NT=50,NS=20,RT=0.85)
 
-	xtest,ytest = DukovicSA.initializetest(testsystem)
+	xtest,ytest = initializetest(testsystem)
 	idx = Array{Bool}(undef,size(ytest))
 	yopt = similar(ytest)
+	tacceptor = zeros(Float64,optimsystem.nwalkers)
+	yacceptor = zeros(Float64,optimsystem.nwalkers)
 
-	println(string("\n optimsystem: \n",optimsystem))
-	println(string("\n testsystem: \n",testsystem))
+	# println(string("\n optimsystem: \n",optimsystem))
+	# println(string("\n testsystem: \n",testsystem))
 	
 	# Call optimize function from Optim package
-	objective_function(P) = fit(P,optimsystem::LineType,ytest,xtest,idx,yopt)
+	objective_function(P) = fit(P,optimsystem::LineType,ytest,xtest,idx,yopt,tacceptor,yacceptor)
 	calloptim(objective_function,LB,UB,P0,VERB,RUNTIME,NT,NS,RT)
 	println("\n run complete \n")
 
 	return nothing
 end
 
-function fit(P0,optimsystem::KMC,ytest,xtest,idx,yfit)
+function fit(P0,optimsystem::KMC,ytest,xtest,idx,yfit,tacceptor,yacceptor)
 	optimsystem = optimsysinit(P0,optimsystem)
-	yfit .= fitKMC(optimsystem,xtest)
+	d = initializeholes(optimsystem)
+	if d[1] < 1 || d[2] > optimsystem.L
+		return 100.
+	end
+	fitKMC!(optimsystem,xtest,yfit,tacceptor,yacceptor)
 	return residual_function(P0[1],idx,yfit,ytest)
 end
 
@@ -46,29 +52,14 @@ function fit(P0,optimsystem::StFunction,ytest,xtest,idx,yfit)
 end
 
 function optimsysinit(P0,sys::KMC_HT)
-	sys = KMC_HT(sys,khop=P0[2],p=P0[3],kHT=P0[4]) #Store inputs in structure
-	if sys.params == :first
-		sys = KMC_HT(sys,params=(P0[5],sys.params[2]))
-	elseif sys.params == :second
-		sys = KMC_HT(sys,params=(sys.params[1],P0[5]))
-	elseif sys.params == :both
-		sys = KMC_HT(sys,params=(P0[5],P0[6]))
-	end
+	sys = KMC_HT(sys,khop=P0[2],p=P0[3],kHT=P0[4],holedist=(P0[5],P0[6])) #Store inputs in structure
 	return sys
 end
 
 function optimsysinit(P0,sys::KMC_RC)
-	sys = KMC_RC(sys,khop=P0[2]) #Store inputs in structure
-	if sys.params == :first
-		sys = KMC_RC(sys,params=(P0[3],sys.params[2]))
-	elseif sys.params == :second
-		sys = KMC_RC(sys,params=(sys.params[1],P0[3]))
-	elseif sys.params == :both
-		sys = KMC_RC(sys,params=(P0[3],P0[4]))
-	end
+	sys = KMC_RC(sys,khop=P0[2],holedist=(P0[3],P0[4])) #Store inputs in structure
 	return sys
 end
-
 
 function residual_function(A,ytest,yfit)
 	yfit .*= A
@@ -81,7 +72,9 @@ function residual_function(A,idx,yfit,ytest)
     r = 0
     idx .= isnan.(yfit)
     idx .= .!(idx)
-	yfit .* A
+	# yfit ./= maximum(.!isnan.(yfit).*yfit)
+	# yfit .+= 1.
+	yfit .*= A
     for i in eachindex(idx)
         if idx[i]
             r += (ytest[i] - yfit[i])^2 
@@ -90,34 +83,22 @@ function residual_function(A,idx,yfit,ytest)
     return r/sum(idx)
 end
 
-function fitKMC(sys::KMC,xdata)
-		tacceptor = runwalkers(sys)
-		yacceptor = makehist(tacceptor)
-		reversebulbonly(sys,yacceptor)
-		intacceptor = int_data(tacceptor,yacceptor,xdata)
-		return intacceptor
+function fitKMC!(sys::KMC,xdata,yfit,tacceptor,yacceptor)
+		runwalkers!(sys,tacceptor)
+		makehist!(tacceptor,yacceptor)
+		reversebulbonly!(sys,yacceptor)
+		yacceptor ./= maximum(yacceptor)
+		yacceptor .+= 1.
+		int_data!(tacceptor,yacceptor,xdata,yfit)
+		return nothing
 end
 
-function fitKMC(sys::KMC,xdata,ydata,A;label1="data",label2="KMC",xlabel="ns",ylabel="arb. units")
-	tacceptor = runwalkers(sys)
-	yacceptor = makehist(tacceptor)
-	reversebulbonly(sys,yacceptor)
-	yfit = int_data(tacceptor,yacceptor,xdata)
-	xfit = copy(xdata)
-	cutxy!(yfit,xfit)
-	plt = plot(xdata,ydata,l=2,xaxis=:log,label=label1,legend=:topright,xlabel=xlabel,ylabel=ylabel);
-	plt = plot!(xfit,yfit*A,l=2,label=label2);
-	return plt, yfit, xfit
-end
-
-function reversebulbonly(sys::KMC_RC,yvec)
+function reversebulbonly!(sys::KMC_RC,yvec)
 	reverse!(yvec)
-
 	return nothing
 end
 
 function reversebulbonly(sys::KMC_HT,yvec)
-
 	return nothing
 end
 
@@ -125,7 +106,6 @@ function initializetest(sys::KMC)
 	tacceptor = runwalkersRC(sys)
 	yacceptor = makehist(tacceptor)
 	reversebulbonly(sys,yacceptor)
-
 	return taccepter, yacceptor
 end
 
@@ -143,9 +123,9 @@ function calloptim(objective_function,LB,UB,P0,VERB,RUNTIME,NT,NS,RT)
 			nt = NT,     # 10; reduce temperature every NT*NS*dim(P0) evaluations
 			ns = NS,     # 20; adjust bounds every NS*dim(P0) evaluations
 			rt = RT,     # 0.85; geometric temperature reduction factor: when temp changes, new temp is T=RT*T0
-			neps = 5,  # number of previous best values the final result is compared to
-			f_tol = 1e-4, # 1e-3, the required tolerance level for function value comparisons
-			x_tol = 1e-4, # 1e-2, the required tolerance level for x
+			neps = 5,    # number of previous best values the final result is compared to
+			f_tol = 1e-3, # 1e-3, the required tolerance level for function value comparisons
+			x_tol = 1e-2, # 1e-2, the required tolerance level for x
 			coverage_ok = false, # if false, increase temperature until initial parameter space is covered
 			verbosity = VERB), # scalar: 0, 1, 2 or 3 (default = 0).
 		Optim.Options(

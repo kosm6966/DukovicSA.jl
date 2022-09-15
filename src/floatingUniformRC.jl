@@ -1,0 +1,86 @@
+"""
+
+`run_optim(P0,LB,UB,l,NT,NS,RT,RUNTIME,VERB)` runs the Simulated Annealing
+program to optimize the parameters given in P0 by recursively minimizing χ².
+All inputs are required. Results are printed to screen.
+
+P0: Array{Float64,1}. Initial Values for Parameters. [N,khop,KHT]
+LB: Array{Float64,1}. Lower Bounds on Parameters. [lb1,lb2,lb3]
+UB: Array{Float64,1}. Upper Bounds on Parameters. [ub1,ub2,ub3]
+NT: Int64. Reduce temperature every NT*NS*dim(P0) evaluations.
+NS: Int64. Adjust bounds every NS*dim(P0) evaluations.
+RT: Float64. Cooling Rate. When temp changes, new temp is T_new = RT * T_old
+RUNTIME: Int64. Terminate run after RUNTIME seconds.
+VERB: Int64. If 0 - don't print to screen. If 3 - print everything to screen.
+l: Int64. Either static l or lmax for uniform distribution
+
+l = Fitl()
+"""
+function run_optim(optimsystem::LineType,testsystem::LineType,P0,LB,UB;RUNTIME=518400,VERB=3,NT=50,NS=20,RT=0.85)
+
+	idx = Array{Bool}(undef,size(testsystem.ydata))
+	yopt = similar(testsystem.ydata)
+	tacceptor = zeros(Float64,optimsystem.nwalkers)
+	yacceptor = zeros(Float64,optimsystem.nwalkers)
+
+	# println(string("\n optimsystem: \n",optimsystem))
+	# println(string("\n testsystem: \n",testsystem))
+	
+	# Call optimize function from Optim package
+	objective_function(P) = DukovicSA.fit(P,optimsystem::LineType,testsystem.ydata,testsystem.xdata,idx,yopt,tacceptor,yacceptor)
+	calloptim(objective_function,LB,UB,P0,VERB,RUNTIME,NT,NS,RT)
+	println("\n run complete \n")
+
+	return nothing
+end
+
+function fit(P0,optimsystem::KMC,ytest,xtest,idx,yfit,tacceptor,yacceptor)
+	if round(abs(P0[3] + 1.7320508075688772*P0[4])) > optimsystem.L
+		return 100.
+	end
+	optimsystem = KMC_RC(sys,khop=P0[2],holedist=(P0[3],P0[4])) #Store inputs in structure
+	fitKMC!(optimsystem,xtest,yfit,tacceptor,yacceptor)
+	return residual_function(P0[1],idx,yfit,ytest)
+end
+
+function residual_function(A,idx,yfit,ytest)
+    r = 0
+    idx .= isnan.(yfit)
+    idx .= .!(idx)
+	yfit .*= A
+    for i in eachindex(idx)
+        if idx[i]
+            r += (ytest[i] - yfit[i])^2 
+        end
+    end
+    return r/sum(idx)
+end
+
+function fitKMC!(sys::KMC,xdata,yfit,tacceptor,yacceptor)
+		runwalkers!(sys,tacceptor)
+		makehist!(tacceptor,yacceptor)
+		reverse!(yacceptor)
+		yacceptor ./= maximum(yacceptor)
+		yacceptor .+= 1.
+		int_data!(tacceptor,yacceptor,xdata,yfit)
+		return nothing
+end
+
+function calloptim(objective_function,LB,UB,P0,VERB,RUNTIME,NT,NS,RT)
+	optimize(objective_function, LB, UB, P0,
+		SAMIN(;
+			nt = NT,     # 10; reduce temperature every NT*NS*dim(P0) evaluations
+			ns = NS,     # 20; adjust bounds every NS*dim(P0) evaluations
+			rt = RT,     # 0.85; geometric temperature reduction factor: when temp changes, new temp is T=RT*T0
+			neps = 5,    # number of previous best values the final result is compared to
+			f_tol = 1e-3, # 1e-3, the required tolerance level for function value comparisons
+			x_tol = 1e-2, # 1e-2, the required tolerance level for x
+			coverage_ok = false, # if false, increase temperature until initial parameter space is covered
+			verbosity = VERB), # scalar: 0, 1, 2 or 3 (default = 0).
+		Optim.Options(
+			iterations = 10^6,
+	  		time_limit = RUNTIME, # seconds; 6 days: 518400
+			show_trace = true,
+			store_trace = false,
+			extended_trace = true))
+end
